@@ -2,7 +2,7 @@
 
 Cross-Tenant Health Audit Framework is an operational reconciliation framework designed to compare infrastructure inventory data against real monitoring visibility across multiple Dynatrace tenants.
 
-It identifies hosts that are reporting correctly, hosts that stopped reporting, hosts missing from their expected tenant, hosts that exist in a different tenant than expected, and hosts that are not included in the expected DXC Management Zone.
+It identifies hosts that are reporting correctly, hosts that stopped reporting, hosts missing from their expected tenant, hosts that exist in a different tenant than expected, and hosts that are not included in the expected Company_A Management Zone.
 
 The framework is designed to reduce monitoring blind spots, expose inventory-to-monitoring mismatches, identify hidden stale Dynatrace entities, and provide actionable executive summaries without relying on manual Dynatrace UI checks.
 
@@ -26,7 +26,7 @@ The framework answers operational questions such as:
 * Which hosts exist in a different tenant than expected?
 * Which hosts are not found in any configured tenant?
 * Which hosts are known exceptions and should not be treated as monitoring gaps?
-* Which AA PROD / AA NON-PROD hosts belong to the DXC Management Zone?
+* Which Company_B PROD / Company_B NON-PROD hosts belong to the Company_A Management Zone?
 * Which Dynatrace `entityId` and `displayName` support each finding?
 
 The final goal is to provide a repeatable, auditable, and transferable process for monitoring coverage validation.
@@ -40,7 +40,7 @@ After each execution, the framework produces:
 * A primary health audit report.
 * A cross-tenant discovery report for hosts not found in their expected tenant.
 * An exclusions report for hosts intentionally skipped.
-* Executive summary reports for AA and DXC.
+* Executive summary reports for Company_B and Company_A.
 * Execution logs.
 * Intermediate host lists for troubleshooting and validation.
 
@@ -59,10 +59,10 @@ NOT_FOUND_ALL_CONFIGURED_TENANTS
 Hosts that were not found in any configured Dynatrace tenant.
 
 ```text
-MZ Not DXC
+MZ Not Company_A
 ```
 
-AA PROD / AA NON-PROD hosts that exist in the tenant but are not part of the DXC Management Zone.
+Company_B PROD / Company_B NON-PROD hosts that exist in the tenant but are not part of the Company_A Management Zone.
 
 These groups are usually the most relevant for operational follow-up.
 
@@ -129,9 +129,9 @@ When a host is not found in its expected tenant, the framework performs a second
 Configured tenants:
 
 ```text
-AA_PROD
-AA_NONPROD
-DXC
+Company_B_PROD
+Company_B_NONPROD
+Company_A
 ```
 
 This helps identify cases where the inventory says one thing, but the host actually exists somewhere else.
@@ -139,8 +139,8 @@ This helps identify cases where the inventory says one thing, but the host actua
 Example:
 
 ```text
-Expected: AA_NONPROD
-Actually found in: AA_PROD
+Expected: Company_B_NONPROD
+Actually found in: Company_B_PROD
 ```
 
 This is reported as:
@@ -153,8 +153,8 @@ Cross-tenant discovery is executed regardless of the selected option.
 
 Examples:
 
-* If option `1` is selected and AA PROD has `NOT_FOUND` hosts, those hosts are searched in AA PROD, AA NON-PROD, and DXC.
-* If option `3` is selected and DXC has `NOT_FOUND` hosts, those hosts are searched in AA PROD, AA NON-PROD, and DXC.
+* If option `1` is selected and Company_B PROD has `NOT_FOUND` hosts, those hosts are searched in Company_B PROD, Company_B NON-PROD, and Company_A.
+* If option `3` is selected and Company_A has `NOT_FOUND` hosts, those hosts are searched in Company_B PROD, Company_B NON-PROD, and Company_A.
 * If option `4` is selected, the global report is followed by the same cross-tenant discovery process.
 
 ***
@@ -168,9 +168,9 @@ Instead, it uses safe tenant-level parallelism.
 For single-tenant options:
 
 ```text
-1) AA PROD
-2) AA NON-PROD
-3) DXC
+1) Company_B PROD
+2) Company_B NON-PROD
+3) Company_A
 ```
 
 Processing is sequential inside the selected tenant.
@@ -184,17 +184,17 @@ For global execution:
 The framework runs the three tenant validations in parallel:
 
 ```text
-AA_PROD     ┐
-AA_NONPROD  ├── parallel tenant-level execution
-DXC         ┘
+Company_B_PROD     ┐
+Company_B_NONPROD  ├── parallel tenant-level execution
+Company_A         ┘
 ```
 
 Cross-tenant discovery also runs in parallel by tenant:
 
 ```text
-All NOT_FOUND hosts → AA_PROD
-All NOT_FOUND hosts → AA_NONPROD
-All NOT_FOUND hosts → DXC
+All NOT_FOUND hosts → Company_B_PROD
+All NOT_FOUND hosts → Company_B_NONPROD
+All NOT_FOUND hosts → Company_A
 ```
 
 This reduces total runtime without flooding any single tenant with excessive concurrent requests.
@@ -223,12 +223,12 @@ EXCLUDED_BY_BLACKLIST
 
 ***
 
-### 4.5 DXC Management Zone Validation for AA Hosts
+### 4.5 Company_A Management Zone Validation for Company_B Hosts
 
-For AA PROD and AA NON-PROD hosts, the framework identifies whether the host belongs to the Dynatrace Management Zone named:
+For Company_B PROD and Company_B NON-PROD hosts, the framework identifies whether the host belongs to the Dynatrace Management Zone named:
 
 ```text
-DXC
+Company_A
 ```
 
 Important design principle:
@@ -241,19 +241,19 @@ The framework first searches the host in the full tenant.
 
 Then it checks the `managementZones` returned by the same Dynatrace API response.
 
-This avoids hiding hosts that exist in the tenant but are not part of the DXC Management Zone.
+This avoids hiding hosts that exist in the tenant but are not part of the Company_A Management Zone.
 
 The output column is:
 
 ```text
-in_dxc_management_zone
+in_Company_A_management_zone
 ```
 
 Possible values:
 
 ```text
-MZ DXC
-MZ Not DXC
+MZ Company_A
+MZ Not Company_A
 UNKNOWN
 N/A
 ```
@@ -261,16 +261,16 @@ N/A
 Meaning:
 
 ```text
-MZ DXC
+MZ Company_A
 ```
 
-The host exists in AA PROD or AA NON-PROD and belongs to the DXC Management Zone.
+The host exists in Company_B PROD or Company_B NON-PROD and belongs to the Company_A Management Zone.
 
 ```text
-MZ Not DXC
+MZ Not Company_A
 ```
 
-The host exists in AA PROD or AA NON-PROD but does not belong to the DXC Management Zone.
+The host exists in Company_B PROD or Company_B NON-PROD but does not belong to the Company_A Management Zone.
 
 ```text
 UNKNOWN
@@ -282,7 +282,7 @@ The framework could not determine the Management Zone status.
 N/A
 ```
 
-The check does not apply, for example for DXC tenant hosts.
+The check does not apply, for example for Company_A tenant hosts.
 
 ***
 
@@ -308,7 +308,7 @@ entitySelector=type(HOST),entityName.startsWith("hostname")
 fields=+lastSeenTms,+managementZones
 ```
 
-The framework does **not** run a second API call to validate the DXC Management Zone.
+The framework does **not** run a second API call to validate the Company_A Management Zone.
 
 Instead, it reads the returned `managementZones` field from the same response.
 
@@ -343,21 +343,21 @@ Hosts that were not found in any configured tenant.
 There are two executive outputs:
 
 ```text
-AA executive summary
-DXC executive summary
+Company_B executive summary
+Company_A executive summary
 ```
 
-The AA executive summary includes both:
+The Company_B executive summary includes both:
 
 ```text
-AA_PROD
-AA_NONPROD
+Company_B_PROD
+Company_B_NONPROD
 ```
 
-The DXC executive summary includes:
+The Company_A executive summary includes:
 
 ```text
-DXC
+Company_A
 ```
 
 ***
@@ -379,13 +379,13 @@ This directory contains all input and output runtime files.
   ├── dt_connectivity_exclusions.csv
   ├── servers_prod.txt
   ├── servers_non_prod.txt
-  ├── servers_dxc.txt
+  ├── servers_Company_A.txt
   ├── ct_health_audit_*_report_<timestamp>.csv
   ├── ct_health_audit_*_report_<timestamp>.log
   ├── ct_health_audit_*_notfound_discovery_<timestamp>.csv
   ├── ct_health_audit_*_excluded_<timestamp>.csv
-  ├── ct_health_audit_aa_executive_summary_<timestamp>.csv
-  └── ct_health_audit_dxc_executive_summary_<timestamp>.csv
+  ├── ct_health_audit_Company_B_executive_summary_<timestamp>.csv
+  └── ct_health_audit_Company_A_executive_summary_<timestamp>.csv
 ```
 
 The framework executable and configuration file remain outside the runtime directory:
@@ -462,17 +462,17 @@ If `~/.ct_health_audit.conf` does not exist and `~/.dt_env.conf` exists, the fra
 Example:
 
 ```bash
-# AA PROD
-TENANT_PROD_URL="https://<aa-prod-api-base-url>"
-TOKEN_PROD="<api-token-aa-prod>"
+# Company_B PROD
+TENANT_PROD_URL="https://<Company_B-prod-api-base-url>"
+TOKEN_PROD="<api-token-Company_B-prod>"
 
-# AA NON-PROD
-TENANT_NONPROD_URL="https://<aa-nonprod-api-base-url>"
-TOKEN_NONPROD="<api-token-aa-nonprod>"
+# Company_B NON-PROD
+TENANT_NONPROD_URL="https://<Company_B-nonprod-api-base-url>"
+TOKEN_NONPROD="<api-token-Company_B-nonprod>"
 
-# DXC
-TENANT_DXC_URL="https://<dxc-api-base-url>"
-TOKEN_DXC="<api-token-dxc>"
+# Company_A
+TENANT_Company_A_URL="https://<Company_A-api-base-url>"
+TOKEN_Company_A="<api-token-Company_A>"
 
 # Primary report threshold
 STALE_HOURS=48
@@ -660,9 +660,9 @@ Contains the hostname or FQDN.
 Examples:
 
 ```text
-server01.tul.aa.com
-server02.aag.svcs.entsvcs.com
-server03.mgmt.aa.com
+server01.tul.Company_B.com
+server02.Company_Bg.svcs.entsvcs.com
+server03.mgmt.Company_B.com
 ```
 
 The framework normalizes this value to short hostname.
@@ -670,7 +670,7 @@ The framework normalizes this value to short hostname.
 Examples:
 
 ```text
-server01.tul.aa.com  -> server01
+server01.tul.Company_B.com  -> server01
 SERVER02.DOMAIN.COM  -> server02
 ```
 
@@ -678,13 +678,13 @@ SERVER02.DOMAIN.COM  -> server02
 
 ### 11.2 `Environment`
 
-Used mainly for AA production / non-production classification.
+Used mainly for Company_B production / non-production classification.
 
 Rule:
 
 ```text
-Production -> AA_PROD
-Anything else -> AA_NONPROD
+Production -> Company_B_PROD
+Anything else -> Company_B_NONPROD
 ```
 
 Examples treated as non-production:
@@ -699,7 +699,7 @@ Test Lab
 Service Continuity - Warm
 ```
 
-DXC hosts are classified as DXC based on domain suffix, not by this field.
+Company_A hosts are classified as Company_A based on domain suffix, not by this field.
 
 ***
 
@@ -725,15 +725,15 @@ Hosts are classified by domain suffix.
 
 ***
 
-### 12.1 DXC Domains
+### 12.1 Company_A Domains
 
 ```text
-.aag.svcs.entsvcs.com
+.Company_Bg.svcs.entsvcs.com
 .entsvcs.net
 .resrc.entsvcs.com
 .oktul.us.eds.com
 .sabre.com
-.aa.dxc.com
+.Company_B.Company_A.com
 .sharedmgmt.com
 .oraclevcn.com
 ```
@@ -741,25 +741,25 @@ Hosts are classified by domain suffix.
 Hosts matching these suffixes are written to:
 
 ```text
-servers_dxc.txt
+servers_Company_A.txt
 ```
 
 ***
 
-### 12.2 AA Domains
+### 12.2 Company_B Domains
 
 ```text
-.corpaa.aa.com
-.corpa.aa.com
-.qcorpaa.aa.com
-.cdc.aa.com
-.tul.aa.com
-.pdc.aa.com
-.aalcorp.aa.com
-.mgmt.aa.com
+.corpCompany_B.Company_B.com
+.corpa.Company_B.com
+.qcorpCompany_B.Company_B.com
+.cdc.Company_B.com
+.tul.Company_B.com
+.pdc.Company_B.com
+.Company_Blcorp.Company_B.com
+.mgmt.Company_B.com
 ```
 
-AA hosts are split into:
+Company_B hosts are split into:
 
 ```text
 servers_prod.txt
@@ -790,17 +790,17 @@ Format:
 
 ```csv
 environment,host,comments
-DXC,oldlinux01,selfmanaged
-AA_PROD,legacywin01,old OS
+Company_A,oldlinux01,selfmanaged
+Company_B_PROD,legacywin01,old OS
 GLOBAL,networkappliance01,network device
 ```
 
 Supported environment values:
 
 ```text
-AA_PROD
-AA_NONPROD
-DXC
+Company_B_PROD
+Company_B_NONPROD
+Company_A
 GLOBAL
 ```
 
@@ -829,13 +829,13 @@ Avoid commas inside the `comments` field. Use semicolons instead.
 Good:
 
 ```csv
-DXC,oldlinux01,selfmanaged; no access
+Company_A,oldlinux01,selfmanaged; no access
 ```
 
 Avoid:
 
 ```csv
-DXC,oldlinux01,selfmanaged, no access
+Company_A,oldlinux01,selfmanaged, no access
 ```
 
 ***
@@ -847,7 +847,7 @@ Each execution rebuilds:
 ```bash
 ~/dt_reports/servers_prod.txt
 ~/dt_reports/servers_non_prod.txt
-~/dt_reports/servers_dxc.txt
+~/dt_reports/servers_Company_A.txt
 ```
 
 Each file contains one normalized short hostname per line.
@@ -855,7 +855,7 @@ Each file contains one normalized short hostname per line.
 Example:
 
 ```text
-dxceis03
+Company_Aeis03
 server01
 server02
 ```
@@ -875,9 +875,9 @@ Run interactively:
 Menu:
 
 ```text
-1) AA PROD
-2) AA NON-PROD
-3) DXC
+1) Company_B PROD
+2) Company_B NON-PROD
+3) Company_A
 4) ALL / GLOBAL
 5) Build lists only
 0) Exit
@@ -893,7 +893,7 @@ Example:
 printf "3\n" | ./cross_tenant_health_audit.sh
 ```
 
-This runs DXC only.
+This runs Company_A only.
 
 Single tenant executions are sequential inside that tenant.
 
@@ -956,26 +956,26 @@ ct_health_audit_<scope>_report_<timestamp>.csv
 Examples:
 
 ```text
-ct_health_audit_aa_prod_report_1779720799.csv
-ct_health_audit_aa_nonprod_report_1779720799.csv
-ct_health_audit_dxc_report_1779720799.csv
+ct_health_audit_Company_B_prod_report_1779720799.csv
+ct_health_audit_Company_B_nonprod_report_1779720799.csv
+ct_health_audit_Company_A_report_1779720799.csv
 ct_health_audit_global_report_1779720799.csv
 ```
 
 Header:
 
 ```csv
-tenant_group,hostname,status,lastSeenTms,age_human,matches,entityId,displayName,in_dxc_management_zone,notes
+tenant_group,hostname,status,lastSeenTms,age_human,matches,entityId,displayName,in_Company_A_management_zone,notes
 ```
 
 Example:
 
 ```csv
-tenant_group,hostname,status,lastSeenTms,age_human,matches,entityId,displayName,in_dxc_management_zone,notes
-AA_PROD,bazweuscognsp02,DISCONNECTED,1777546509702,21d 8h 3m,1,HOST-5E9CF3AB234AF2AF,bazweuscognsp02,MZ DXC,
-AA_PROD,server01,CONNECTED,1779720000000,0d 0h 20m,1,HOST-1234567890ABCDEF,server01,MZ Not DXC,
-DXC,datamallpgp01,DISCONNECTED,1779510401221,2d 10h 27m,1,HOST-44FD1B312EF1028A,datamallpgp01,N/A,
-DXC,oldlinux01,EXCLUDED_BY_BLACKLIST,,,0,,,N/A,selfmanaged
+tenant_group,hostname,status,lastSeenTms,age_human,matches,entityId,displayName,in_Company_A_management_zone,notes
+Company_B_PROD,bazweuscognsp02,DISCONNECTED,1777546509702,21d 8h 3m,1,HOST-5E9CF3AB234AF2AF,bazweuscognsp02,MZ Company_A,
+Company_B_PROD,server01,CONNECTED,1779720000000,0d 0h 20m,1,HOST-1234567890ABCDEF,server01,MZ Not Company_A,
+Company_A,datamallpgp01,DISCONNECTED,1779510401221,2d 10h 27m,1,HOST-44FD1B312EF1028A,datamallpgp01,N/A,
+Company_A,oldlinux01,EXCLUDED_BY_BLACKLIST,,,0,,,N/A,selfmanaged
 ```
 
 ***
@@ -1035,25 +1035,25 @@ The API returned an invalid response or the tenant could not be queried correctl
 Column:
 
 ```text
-in_dxc_management_zone
+in_Company_A_management_zone
 ```
 
 Possible values:
 
 ```text
-MZ DXC
-MZ Not DXC
+MZ Company_A
+MZ Not Company_A
 UNKNOWN
 N/A
 ```
 
-### `MZ DXC`
+### `MZ Company_A`
 
-The host exists in AA PROD or AA NON-PROD and belongs to the DXC Management Zone.
+The host exists in Company_B PROD or Company_B NON-PROD and belongs to the Company_A Management Zone.
 
-### `MZ Not DXC`
+### `MZ Not Company_A`
 
-The host exists in AA PROD or AA NON-PROD but does not belong to the DXC Management Zone.
+The host exists in Company_B PROD or Company_B NON-PROD but does not belong to the Company_A Management Zone.
 
 ### `UNKNOWN`
 
@@ -1061,7 +1061,7 @@ The Management Zone status could not be determined.
 
 ### `N/A`
 
-The Management Zone check does not apply, for example for DXC tenant hosts.
+The Management Zone check does not apply, for example for Company_A tenant hosts.
 
 ***
 
@@ -1149,21 +1149,21 @@ They do not replace the primary report or discovery report.
 Files:
 
 ```text
-ct_health_audit_aa_executive_summary_<timestamp>.csv
-ct_health_audit_dxc_executive_summary_<timestamp>.csv
+ct_health_audit_Company_B_executive_summary_<timestamp>.csv
+ct_health_audit_Company_A_executive_summary_<timestamp>.csv
 ```
 
-AA executive summary includes:
+Company_B executive summary includes:
 
 ```text
-AA_PROD
-AA_NONPROD
+Company_B_PROD
+Company_B_NONPROD
 ```
 
-DXC executive summary includes:
+Company_A executive summary includes:
 
 ```text
-DXC
+Company_A
 ```
 
 ***
@@ -1195,15 +1195,15 @@ The host was not found in any configured tenant.
 ### 21.2 Executive Report Header
 
 ```csv
-run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_dxc_management_zone,source_file
+run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_Company_A_management_zone,source_file
 ```
 
 Example:
 
 ```csv
-run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_dxc_management_zone,source_file
-1779300000,STALE_0.25H_PLUS,AA_PROD,server01,0.42,0d 0h 25m,1779298500000,HOST-1234567890ABCDEF,server01,MZ DXC,ct_health_audit_global_report_1779300000.csv
-1779300000,NOT_FOUND_ALL_TENANTS,DXC,server02,,,,,,,ct_health_audit_global_notfound_discovery_1779300000.csv
+run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_Company_A_management_zone,source_file
+1779300000,STALE_0.25H_PLUS,Company_B_PROD,server01,0.42,0d 0h 25m,1779298500000,HOST-1234567890ABCDEF,server01,MZ Company_A,ct_health_audit_global_report_1779300000.csv
+1779300000,NOT_FOUND_ALL_TENANTS,Company_A,server02,,,,,,,ct_health_audit_global_notfound_discovery_1779300000.csv
 ```
 
 ***
@@ -1223,7 +1223,7 @@ because the API returns a historical HOST entity with an old `lastSeenTms`.
 Example evidence model:
 
 ```text
-Tenant: AA_PROD
+Tenant: Company_B_PROD
 Host: bazweuscognsp02
 Entity ID: HOST-5E9CF3AB234AF2AF
 Display Name: bazweuscognsp02
@@ -1270,14 +1270,14 @@ To prevent this, the framework applies local filtering:
 Valid matches:
 
 ```text
-dxceis03
-dxceis03.tul.aa.com
+Company_Aeis03
+Company_Aeis03.tul.Company_B.com
 ```
 
 Invalid match:
 
 ```text
-dxceis031.tul.aa.com
+Company_Aeis031.tul.Company_B.com
 ```
 
 ***
@@ -1455,12 +1455,12 @@ Check:
 
 ***
 
-### Too many `MZ Not DXC`
+### Too many `MZ Not Company_A`
 
 Check:
 
-* Whether the host exists in AA PROD or AA NON-PROD.
-* Whether the host should be part of the DXC Management Zone.
+* Whether the host exists in Company_B PROD or Company_B NON-PROD.
+* Whether the host should be part of the Company_A Management Zone.
 * Whether the Management Zone rules are correctly configured.
 * Whether the entity is historical/stale and no longer matches current zone rules.
 
@@ -1491,7 +1491,7 @@ Check:
 
 ## 30. Example Runs
 
-### DXC only
+### Company_A only
 
 ```bash
 printf "3\n" | ./cross_tenant_health_audit.sh
@@ -1500,13 +1500,13 @@ printf "3\n" | ./cross_tenant_health_audit.sh
 Expected outputs:
 
 ```text
-ct_health_audit_dxc_report_<timestamp>.csv
-ct_health_audit_dxc_excluded_<timestamp>.csv
-ct_health_audit_dxc_executive_summary_<timestamp>.csv
-ct_health_audit_dxc_report_<timestamp>.log
+ct_health_audit_Company_A_report_<timestamp>.csv
+ct_health_audit_Company_A_excluded_<timestamp>.csv
+ct_health_audit_Company_A_executive_summary_<timestamp>.csv
+ct_health_audit_Company_A_report_<timestamp>.log
 ```
 
-If DXC has `NOT_FOUND` hosts, a cross-tenant discovery file is also generated.
+If Company_A has `NOT_FOUND` hosts, a cross-tenant discovery file is also generated.
 
 ***
 
@@ -1522,8 +1522,8 @@ Expected outputs:
 ct_health_audit_global_report_<timestamp>.csv
 ct_health_audit_global_notfound_discovery_<timestamp>.csv
 ct_health_audit_global_excluded_<timestamp>.csv
-ct_health_audit_aa_executive_summary_<timestamp>.csv
-ct_health_audit_dxc_executive_summary_<timestamp>.csv
+ct_health_audit_Company_B_executive_summary_<timestamp>.csv
+ct_health_audit_Company_A_executive_summary_<timestamp>.csv
 ct_health_audit_global_report_<timestamp>.log
 ```
 
@@ -1545,7 +1545,7 @@ Includes:
 * Match count.
 * Dynatrace `entityId`.
 * Dynatrace `displayName`.
-* DXC Management Zone status for AA hosts.
+* Company_A Management Zone status for Company_B hosts.
 
 ***
 
@@ -1643,15 +1643,15 @@ Includes:
 
 ***
 
-### v1.1 — Entity Evidence + DXC Management Zone Validation
+### v1.1 — Entity Evidence + Company_A Management Zone Validation
 
 Implemented / in progress:
 
 * Add `entityId`.
 * Add `displayName`.
-* Add DXC Management Zone status for AA hosts.
+* Add Company_A Management Zone status for Company_B hosts.
 * Optimize Management Zone validation using `managementZones` from the same API response.
-* Avoid second API call per AA host.
+* Avoid second API call per Company_B host.
 * Preserve hidden stale entity evidence.
 
 ***
@@ -1665,7 +1665,7 @@ Planned:
 * Stale hosts by age bucket.
 * `NOT_FOUND_ALL_CONFIGURED_TENANTS`.
 * `FOUND_IN_DIFFERENT_TENANT`.
-* `MZ DXC` vs `MZ Not DXC`.
+* `MZ Company_A` vs `MZ Not Company_A`.
 * Excluded hosts by reason.
 * Executive action views.
 
