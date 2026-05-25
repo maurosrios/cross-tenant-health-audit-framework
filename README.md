@@ -7,7 +7,7 @@ This framework automates the validation of monitoring coverage, identifying blin
 
 ## Key Features
 - **Cross-Tenant Reconciliation:** Detects if hosts are missing from their expected tenant but reporting in another.
-- **Management Zone Validation:** Automatically validates DXC Management Zone membership for AA hosts.
+- **Management Zone Validation:** Automatically validates Company_A Management Zone membership for Company_B hosts.
 - **Resilient API Interaction:** Single-call optimization per host to reduce API load and throttling risks.
 - **Actionable Insights:** Generates primary health reports, discovery reports for missing hosts, and executive summaries.
 - **Operational Hygiene:** Handles known exclusions via blacklist and generates clean inventory lists.
