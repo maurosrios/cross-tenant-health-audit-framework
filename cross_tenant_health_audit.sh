@@ -8,11 +8,11 @@ set -euo pipefail
 #   - Single API call per host.
 #   - Primary lookup is NOT filtered by Management Zone.
 #   - managementZones are read from the same /api/v2/entities response.
-#   - AA hosts are classified as:
-#       MZ DXC
-#       MZ Not DXC
+#   - Company_B hosts are classified as:
+#       MZ Company_A
+#       MZ Not Company_A
 #       UNKNOWN
-#   - DXC hosts show:
+#   - Company_A hosts show:
 #       N/A
 #############################################
 
@@ -41,7 +41,7 @@ fi
 
 PROD_LIST="${PROD_LIST:-${DATA_DIR}/servers_prod.txt}"
 NONPROD_LIST="${NONPROD_LIST:-${DATA_DIR}/servers_non_prod.txt}"
-DXC_LIST="${DXC_LIST:-${DATA_DIR}/servers_dxc.txt}"
+Company_A_LIST="${Company_A_LIST:-${DATA_DIR}/servers_Company_A.txt}"
 
 BOOTSTRAP_LOG="${LOG_DIR}/${OUTPUT_PREFIX}_bootstrap_${RUN_TS}.log"
 LOG_FILE="$BOOTSTRAP_LOG"
@@ -49,8 +49,8 @@ LOG_FILE="$BOOTSTRAP_LOG"
 REPORT_CSV=""
 DISCOVERY_CSV=""
 EXCLUDED_CSV=""
-AA_EXEC_CSV=""
-DXC_EXEC_CSV=""
+Company_B_EXEC_CSV=""
+Company_A_EXEC_CSV=""
 
 declare -A EXCLUSION_COMMENTS
 
@@ -94,14 +94,14 @@ normalize_env_key() {
   e="${e// /_}"
 
   case "$e" in
-    AA_PROD|PROD|AA_PRODUCTION|PRODUCTION)
-      echo "AA_PROD"
+    Company_B_PROD|PROD|Company_B_PRODUCTION|PRODUCTION)
+      echo "Company_B_PROD"
       ;;
-    AA_NONPROD|AA_NON_PROD|NONPROD|NON_PROD|AA_NON_PRODUCTION|NON_PRODUCTION)
-      echo "AA_NONPROD"
+    Company_B_NONPROD|Company_B_NON_PROD|NONPROD|NON_PROD|Company_B_NON_PRODUCTION|NON_PRODUCTION)
+      echo "Company_B_NONPROD"
       ;;
-    DXC)
-      echo "DXC"
+    Company_A)
+      echo "Company_A"
       ;;
     GLOBAL|ALL)
       echo "GLOBAL"
@@ -121,13 +121,13 @@ write_report_row() {
   local matches="$6"
   local entity_id="${7:-}"
   local display_name="${8:-}"
-  local in_dxc_mz="${9:-}"
+  local in_Company_A_mz="${9:-}"
   local notes="${10:-}"
 
   display_name="$(sanitize_csv_field "$display_name")"
   notes="$(sanitize_csv_field "$notes")"
 
-  echo "${tenant_group},${hostname},${status},${last_seen},${age_human},${matches},${entity_id},${display_name},${in_dxc_mz},${notes}" >> "$REPORT_CSV"
+  echo "${tenant_group},${hostname},${status},${last_seen},${age_human},${matches},${entity_id},${display_name},${in_Company_A_mz},${notes}" >> "$REPORT_CSV"
 }
 
 write_excluded_row() {
@@ -186,15 +186,15 @@ load_config() {
   : "${TOKEN_PROD:?Missing TOKEN_PROD in $CONFIG_PATH}"
   : "${TENANT_NONPROD_URL:?Missing TENANT_NONPROD_URL in $CONFIG_PATH}"
   : "${TOKEN_NONPROD:?Missing TOKEN_NONPROD in $CONFIG_PATH}"
-  : "${TENANT_DXC_URL:?Missing TENANT_DXC_URL in $CONFIG_PATH}"
-  : "${TOKEN_DXC:?Missing TOKEN_DXC in $CONFIG_PATH}"
+  : "${TENANT_Company_A_URL:?Missing TENANT_Company_A_URL in $CONFIG_PATH}"
+  : "${TOKEN_Company_A:?Missing TOKEN_Company_A in $CONFIG_PATH}"
 
   STALE_HOURS="${STALE_HOURS:-48}"
   EXEC_STALE_HOURS="${EXEC_STALE_HOURS:-2}"
 
   TENANT_PROD_URL="${TENANT_PROD_URL%/}"
   TENANT_NONPROD_URL="${TENANT_NONPROD_URL%/}"
-  TENANT_DXC_URL="${TENANT_DXC_URL%/}"
+  TENANT_Company_A_URL="${TENANT_Company_A_URL%/}"
 }
 
 ###############################################################################
@@ -245,12 +245,12 @@ load_exclusions() {
     fi
 
     case "$env_key" in
-      AA_PROD|AA_NONPROD|DXC|GLOBAL)
+      Company_B_PROD|Company_B_NONPROD|Company_A|GLOBAL)
         EXCLUSION_COMMENTS["${env_key}|${host_key}"]="$comments"
         loaded=$((loaded + 1))
         ;;
       *)
-        log "WARNING: Invalid exclusion environment '${env}' on line ${line_no}. Allowed: AA_PROD, AA_NONPROD, DXC, GLOBAL"
+        log "WARNING: Invalid exclusion environment '${env}' on line ${line_no}. Allowed: Company_B_PROD, Company_B_NONPROD, Company_A, GLOBAL"
         skipped=$((skipped + 1))
         ;;
     esac
@@ -304,8 +304,8 @@ set_output_files() {
   DISCOVERY_CSV="${REPORT_DIR}/${OUTPUT_PREFIX}_${run_label}_notfound_discovery_${RUN_TS}.csv"
   EXCLUDED_CSV="${REPORT_DIR}/${OUTPUT_PREFIX}_${run_label}_excluded_${RUN_TS}.csv"
 
-  AA_EXEC_CSV="${REPORT_DIR}/${OUTPUT_PREFIX}_aa_executive_summary_${RUN_TS}.csv"
-  DXC_EXEC_CSV="${REPORT_DIR}/${OUTPUT_PREFIX}_dxc_executive_summary_${RUN_TS}.csv"
+  Company_B_EXEC_CSV="${REPORT_DIR}/${OUTPUT_PREFIX}_Company_B_executive_summary_${RUN_TS}.csv"
+  Company_A_EXEC_CSV="${REPORT_DIR}/${OUTPUT_PREFIX}_Company_A_executive_summary_${RUN_TS}.csv"
 
   local final_log="${LOG_DIR}/${OUTPUT_PREFIX}_${run_label}_report_${RUN_TS}.log"
 
@@ -318,8 +318,8 @@ set_output_files() {
   log "Report=${REPORT_CSV}"
   log "Discovery report=${DISCOVERY_CSV}"
   log "Excluded report=${EXCLUDED_CSV}"
-  log "AA executive summary=${AA_EXEC_CSV}"
-  log "DXC executive summary=${DXC_EXEC_CSV}"
+  log "Company_B executive summary=${Company_B_EXEC_CSV}"
+  log "Company_A executive summary=${Company_A_EXEC_CSV}"
   log "Log=${LOG_FILE}"
 }
 
@@ -330,13 +330,13 @@ build_lists_from_excel() {
   [[ -f "$EXCEL_PATH" ]] || die "Excel file not found: $EXCEL_PATH"
 
   log "Building server lists from Excel: $EXCEL_PATH"
-  log "Outputs: $PROD_LIST | $NONPROD_LIST | $DXC_LIST"
+  log "Outputs: $PROD_LIST | $NONPROD_LIST | $Company_A_LIST"
 
   : > "$PROD_LIST"
   : > "$NONPROD_LIST"
-  : > "$DXC_LIST"
+  : > "$Company_A_LIST"
 
-  python3 - <<'PY' "$EXCEL_PATH" "$PROD_LIST" "$NONPROD_LIST" "$DXC_LIST"
+  python3 - <<'PY' "$EXCEL_PATH" "$PROD_LIST" "$NONPROD_LIST" "$Company_A_LIST"
 import sys
 import re
 
@@ -347,7 +347,7 @@ except ModuleNotFoundError:
     print("Install with: python3 -m pip install --user pandas openpyxl", file=sys.stderr)
     sys.exit(2)
 
-excel_path, prod_out, nonprod_out, dxc_out = sys.argv[1:5]
+excel_path, prod_out, nonprod_out, Company_A_out = sys.argv[1:5]
 
 try:
     df = pd.read_excel(excel_path, engine="openpyxl")
@@ -362,29 +362,29 @@ for c in required:
         print(f"ERROR: Missing column '{c}' in Excel. Found columns: {list(df.columns)}", file=sys.stderr)
         sys.exit(2)
 
-DXC_DOMAINS = [
-    ".aag.svcs.entsvcs.com",
+Company_A_DOMAINS = [
+    ".Company_Bg.svcs.entsvcs.com",
     ".entsvcs.net",
     ".resrc.entsvcs.com",
     ".oktul.us.eds.com",
     ".sabre.com",
-    ".aa.dxc.com",
+    ".Company_B.Company_A.com",
     ".sharedmgmt.com",
     ".oraclevcn.com",
 ]
 
-AA_DOMAINS = [
-    ".corpaa.aa.com",
-    ".corpa.aa.com",
-    ".qcorpaa.aa.com",
-    ".cdc.aa.com",
-    ".tul.aa.com",
-    ".pdc.aa.com",
-    ".aalcorp.aa.com",
-    ".mgmt.aa.com",
+Company_B_DOMAINS = [
+    ".corpCompany_B.Company_B.com",
+    ".corpa.Company_B.com",
+    ".qcorpCompany_B.Company_B.com",
+    ".cdc.Company_B.com",
+    ".tul.Company_B.com",
+    ".pdc.Company_B.com",
+    ".Company_Blcorp.Company_B.com",
+    ".mgmt.Company_B.com",
 ]
 
-AA_PROD_ENV = {"production"}
+Company_B_PROD_ENV = {"production"}
 
 EXCLUDED_OS = {
     "ibm z",
@@ -413,7 +413,7 @@ def normalize_short(host_full: str):
 
 prod = set()
 nonprod = set()
-dxc = set()
+Company_A = set()
 
 skipped_os = 0
 skipped_domain = 0
@@ -433,12 +433,12 @@ for _, row in df.iterrows():
         skipped_invalid += 1
         continue
 
-    if ends_with_any(host_full, DXC_DOMAINS):
-        dxc.add(short)
+    if ends_with_any(host_full, Company_A_DOMAINS):
+        Company_A.add(short)
         continue
 
-    if ends_with_any(host_full, AA_DOMAINS):
-        if env in AA_PROD_ENV:
+    if ends_with_any(host_full, Company_B_DOMAINS):
+        if env in Company_B_PROD_ENV:
             prod.add(short)
         else:
             nonprod.add(short)
@@ -454,19 +454,19 @@ with open(nonprod_out, "w") as f:
     for h in sorted(nonprod):
         f.write(h + "\n")
 
-with open(dxc_out, "w") as f:
-    for h in sorted(dxc):
+with open(Company_A_out, "w") as f:
+    for h in sorted(Company_A):
         f.write(h + "\n")
 
-print(f"OK: PROD={len(prod)} NON-PROD={len(nonprod)} DXC={len(dxc)}", file=sys.stderr)
+print(f"OK: PROD={len(prod)} NON-PROD={len(nonprod)} Company_A={len(Company_A)}", file=sys.stderr)
 print(f"Skipped: OS={skipped_os} UnknownDomain={skipped_domain} InvalidHost={skipped_invalid}", file=sys.stderr)
 PY
 
   sort -u "$PROD_LIST" -o "$PROD_LIST"
   sort -u "$NONPROD_LIST" -o "$NONPROD_LIST"
-  sort -u "$DXC_LIST" -o "$DXC_LIST"
+  sort -u "$Company_A_LIST" -o "$Company_A_LIST"
 
-  log "List counts: PROD=$(wc -l < "$PROD_LIST" | tr -d ' ') NON-PROD=$(wc -l < "$NONPROD_LIST" | tr -d ' ') DXC=$(wc -l < "$DXC_LIST" | tr -d ' ')"
+  log "List counts: PROD=$(wc -l < "$PROD_LIST" | tr -d ' ') NON-PROD=$(wc -l < "$NONPROD_LIST" | tr -d ' ') Company_A=$(wc -l < "$Company_A_LIST" | tr -d ' ')"
 }
 
 ###############################################################################
@@ -517,13 +517,13 @@ extract_latest_field() {
   ' 2>/dev/null || echo ""
 }
 
-check_dxc_management_zone_from_json() {
+check_Company_A_management_zone_from_json() {
   local label="$1"
   local json="$2"
   local host="$3"
 
   case "$label" in
-    AA_PROD|AA_NONPROD)
+    Company_B_PROD|Company_B_NONPROD)
       ;;
     *)
       echo "N/A"
@@ -548,15 +548,15 @@ check_dxc_management_zone_from_json() {
       | sort_by(.lastSeenTms // 0)
       | reverse
       | .[0].managementZones[]?
-      | select(.name == "DXC")
+      | select(.name == "Company_A")
     ]
     | length
   ' 2>/dev/null || echo "0")"
 
   if [[ "$mz_count" =~ ^[0-9]+$ && "$mz_count" -gt 0 ]]; then
-    echo "MZ DXC"
+    echo "MZ Company_A"
   else
-    echo "MZ Not DXC"
+    echo "MZ Not Company_A"
   fi
 }
 
@@ -729,11 +729,11 @@ process_list_for_tenant() {
       continue
     fi
 
-    local last_seen entity_id display_name in_dxc_mz
+    local last_seen entity_id display_name in_Company_A_mz
     last_seen="$(extract_latest_field "$json" "$host" "lastSeenTms")"
     entity_id="$(extract_latest_field "$json" "$host" "entityId")"
     display_name="$(extract_latest_field "$json" "$host" "displayName")"
-    in_dxc_mz="$(check_dxc_management_zone_from_json "$label" "$json" "$host")"
+    in_Company_A_mz="$(check_Company_A_management_zone_from_json "$label" "$json" "$host")"
 
     local cls status age_s age_h
     cls="$(classify_last_seen "${last_seen:-null}" "$stale_hours")"
@@ -742,7 +742,7 @@ process_list_for_tenant() {
     age_s="$(echo "$cls" | cut -d',' -f2)"
     age_h="$(echo "$cls" | cut -d',' -f3)"
 
-    write_report_row "$label" "$host" "$status" "$last_seen" "$age_h" "$total" "$entity_id" "$display_name" "$in_dxc_mz" ""
+    write_report_row "$label" "$host" "$status" "$last_seen" "$age_h" "$total" "$entity_id" "$display_name" "$in_Company_A_mz" ""
 
   done < "$list_file"
 
@@ -780,36 +780,36 @@ run_global_parallel() {
   local tmp_dir
   tmp_dir="$(mktemp -d "/tmp/ct_global_${RUN_TS}_XXXXXX")"
 
-  local prod_report="${tmp_dir}/aa_prod.report.csv"
-  local nonprod_report="${tmp_dir}/aa_nonprod.report.csv"
-  local dxc_report="${tmp_dir}/dxc.report.csv"
+  local prod_report="${tmp_dir}/Company_B_prod.report.csv"
+  local nonprod_report="${tmp_dir}/Company_B_nonprod.report.csv"
+  local Company_A_report="${tmp_dir}/Company_A.report.csv"
 
-  local prod_excluded="${tmp_dir}/aa_prod.excluded.csv"
-  local nonprod_excluded="${tmp_dir}/aa_nonprod.excluded.csv"
-  local dxc_excluded="${tmp_dir}/dxc.excluded.csv"
+  local prod_excluded="${tmp_dir}/Company_B_prod.excluded.csv"
+  local nonprod_excluded="${tmp_dir}/Company_B_nonprod.excluded.csv"
+  local Company_A_excluded="${tmp_dir}/Company_A.excluded.csv"
 
   log "GLOBAL temp directory=${tmp_dir}"
 
   (
-    run_tenant_job_to_files "AA_PROD" "$TENANT_PROD_URL" "$TOKEN_PROD" "$PROD_LIST" "$prod_report" "$prod_excluded"
+    run_tenant_job_to_files "Company_B_PROD" "$TENANT_PROD_URL" "$TOKEN_PROD" "$PROD_LIST" "$prod_report" "$prod_excluded"
   ) &
   local pid_prod=$!
 
   (
-    run_tenant_job_to_files "AA_NONPROD" "$TENANT_NONPROD_URL" "$TOKEN_NONPROD" "$NONPROD_LIST" "$nonprod_report" "$nonprod_excluded"
+    run_tenant_job_to_files "Company_B_NONPROD" "$TENANT_NONPROD_URL" "$TOKEN_NONPROD" "$NONPROD_LIST" "$nonprod_report" "$nonprod_excluded"
   ) &
   local pid_nonprod=$!
 
   (
-    run_tenant_job_to_files "DXC" "$TENANT_DXC_URL" "$TOKEN_DXC" "$DXC_LIST" "$dxc_report" "$dxc_excluded"
+    run_tenant_job_to_files "Company_A" "$TENANT_Company_A_URL" "$TOKEN_Company_A" "$Company_A_LIST" "$Company_A_report" "$Company_A_excluded"
   ) &
-  local pid_dxc=$!
+  local pid_Company_A=$!
 
   local rc=0
 
   wait "$pid_prod" || rc=1
   wait "$pid_nonprod" || rc=1
-  wait "$pid_dxc" || rc=1
+  wait "$pid_Company_A" || rc=1
 
   if (( rc != 0 )); then
     log "WARNING: One or more GLOBAL tenant jobs returned a non-zero exit code."
@@ -820,11 +820,11 @@ run_global_parallel() {
 
   [[ -f "$prod_report" ]] && cat "$prod_report" >> "$REPORT_CSV"
   [[ -f "$nonprod_report" ]] && cat "$nonprod_report" >> "$REPORT_CSV"
-  [[ -f "$dxc_report" ]] && cat "$dxc_report" >> "$REPORT_CSV"
+  [[ -f "$Company_A_report" ]] && cat "$Company_A_report" >> "$REPORT_CSV"
 
   [[ -f "$prod_excluded" ]] && cat "$prod_excluded" >> "$EXCLUDED_CSV"
   [[ -f "$nonprod_excluded" ]] && cat "$nonprod_excluded" >> "$EXCLUDED_CSV"
-  [[ -f "$dxc_excluded" ]] && cat "$dxc_excluded" >> "$EXCLUDED_CSV"
+  [[ -f "$Company_A_excluded" ]] && cat "$Company_A_excluded" >> "$EXCLUDED_CSV"
 
   log "GLOBAL parallel execution completed."
 }
@@ -865,18 +865,18 @@ evaluate_host_in_tenant() {
     return
   fi
 
-  local last_seen entity_id display_name in_dxc_mz cls status
+  local last_seen entity_id display_name in_Company_A_mz cls status
   last_seen="$(extract_latest_field "$json" "$host" "lastSeenTms")"
   entity_id="$(extract_latest_field "$json" "$host" "entityId")"
   display_name="$(extract_latest_field "$json" "$host" "displayName")"
-  in_dxc_mz="$(check_dxc_management_zone_from_json "$label" "$json" "$host")"
+  in_Company_A_mz="$(check_Company_A_management_zone_from_json "$label" "$json" "$host")"
 
   cls="$(classify_last_seen "${last_seen:-null}" "$stale_hours")"
   status="$(echo "$cls" | cut -d',' -f1)"
 
   display_name="$(sanitize_csv_field "$display_name")"
 
-  echo "YES|${status}|${last_seen}|${total}|${entity_id}|${display_name}|${in_dxc_mz}"
+  echo "YES|${status}|${last_seen}|${total}|${entity_id}|${display_name}|${in_Company_A_mz}"
 }
 
 discovery_scan_tenant() {
@@ -946,30 +946,30 @@ run_notfound_discovery() {
   log "Discovery CSV=${DISCOVERY_CSV}"
   log "Discovery temp directory=${tmp_dir}"
 
-  local aa_prod_scan="${tmp_dir}/aa_prod.scan"
-  local aa_nonprod_scan="${tmp_dir}/aa_nonprod.scan"
-  local dxc_scan="${tmp_dir}/dxc.scan"
+  local Company_B_prod_scan="${tmp_dir}/Company_B_prod.scan"
+  local Company_B_nonprod_scan="${tmp_dir}/Company_B_nonprod.scan"
+  local Company_A_scan="${tmp_dir}/Company_A.scan"
 
   (
-    discovery_scan_tenant "AA_PROD" "$TENANT_PROD_URL" "$TOKEN_PROD" "$hosts_file" "$aa_prod_scan"
+    discovery_scan_tenant "Company_B_PROD" "$TENANT_PROD_URL" "$TOKEN_PROD" "$hosts_file" "$Company_B_prod_scan"
   ) &
   local pid_prod=$!
 
   (
-    discovery_scan_tenant "AA_NONPROD" "$TENANT_NONPROD_URL" "$TOKEN_NONPROD" "$hosts_file" "$aa_nonprod_scan"
+    discovery_scan_tenant "Company_B_NONPROD" "$TENANT_NONPROD_URL" "$TOKEN_NONPROD" "$hosts_file" "$Company_B_nonprod_scan"
   ) &
   local pid_nonprod=$!
 
   (
-    discovery_scan_tenant "DXC" "$TENANT_DXC_URL" "$TOKEN_DXC" "$hosts_file" "$dxc_scan"
+    discovery_scan_tenant "Company_A" "$TENANT_Company_A_URL" "$TOKEN_Company_A" "$hosts_file" "$Company_A_scan"
   ) &
-  local pid_dxc=$!
+  local pid_Company_A=$!
 
   local rc=0
 
   wait "$pid_prod" || rc=1
   wait "$pid_nonprod" || rc=1
-  wait "$pid_dxc" || rc=1
+  wait "$pid_Company_A" || rc=1
 
   if (( rc != 0 )); then
     log "WARNING: One or more discovery tenant scans returned a non-zero exit code."
@@ -978,35 +978,35 @@ run_notfound_discovery() {
 
   : > "$DISCOVERY_CSV"
 
-  echo "run_ts,hostname,expected_group,original_status,found_in_aa_prod,aa_prod_status,aa_prod_lastSeenTms,aa_prod_matches,aa_prod_entityId,aa_prod_displayName,aa_prod_in_dxc_management_zone,found_in_aa_nonprod,aa_nonprod_status,aa_nonprod_lastSeenTms,aa_nonprod_matches,aa_nonprod_entityId,aa_nonprod_displayName,aa_nonprod_in_dxc_management_zone,found_in_dxc,dxc_status,dxc_lastSeenTms,dxc_matches,dxc_entityId,dxc_displayName,dxc_in_dxc_management_zone,resolved_location,resolution_status,matches_total" >> "$DISCOVERY_CSV"
+  echo "run_ts,hostname,expected_group,original_status,found_in_Company_B_prod,Company_B_prod_status,Company_B_prod_lastSeenTms,Company_B_prod_matches,Company_B_prod_entityId,Company_B_prod_displayName,Company_B_prod_in_Company_A_management_zone,found_in_Company_B_nonprod,Company_B_nonprod_status,Company_B_nonprod_lastSeenTms,Company_B_nonprod_matches,Company_B_nonprod_entityId,Company_B_nonprod_displayName,Company_B_nonprod_in_Company_A_management_zone,found_in_Company_A,Company_A_status,Company_A_lastSeenTms,Company_A_matches,Company_A_entityId,Company_A_displayName,Company_A_in_Company_A_management_zone,resolved_location,resolution_status,matches_total" >> "$DISCOVERY_CSV"
 
   awk -F',' \
     -v run_ts="$RUN_TS" \
-    -v aa_prod_scan="$aa_prod_scan" \
-    -v aa_nonprod_scan="$aa_nonprod_scan" \
-    -v dxc_scan="$dxc_scan" \
+    -v Company_B_prod_scan="$Company_B_prod_scan" \
+    -v Company_B_nonprod_scan="$Company_B_nonprod_scan" \
+    -v Company_A_scan="$Company_A_scan" \
     -v out="$DISCOVERY_CSV" '
     BEGIN {
-      while ((getline line < aa_prod_scan) > 0) {
+      while ((getline line < Company_B_prod_scan) > 0) {
         split(line,a,"|")
         h=a[1]
         ap_f[h]=a[2]; ap_s[h]=a[3]; ap_l[h]=a[4]; ap_m[h]=a[5]; ap_e[h]=a[6]; ap_d[h]=a[7]; ap_z[h]=a[8]
       }
-      close(aa_prod_scan)
+      close(Company_B_prod_scan)
 
-      while ((getline line < aa_nonprod_scan) > 0) {
+      while ((getline line < Company_B_nonprod_scan) > 0) {
         split(line,a,"|")
         h=a[1]
         an_f[h]=a[2]; an_s[h]=a[3]; an_l[h]=a[4]; an_m[h]=a[5]; an_e[h]=a[6]; an_d[h]=a[7]; an_z[h]=a[8]
       }
-      close(aa_nonprod_scan)
+      close(Company_B_nonprod_scan)
 
-      while ((getline line < dxc_scan) > 0) {
+      while ((getline line < Company_A_scan) > 0) {
         split(line,a,"|")
         h=a[1]
         dx_f[h]=a[2]; dx_s[h]=a[3]; dx_l[h]=a[4]; dx_m[h]=a[5]; dx_e[h]=a[6]; dx_d[h]=a[7]; dx_z[h]=a[8]
       }
-      close(dxc_scan)
+      close(Company_A_scan)
     }
     {
       expected=$1
@@ -1041,9 +1041,9 @@ run_notfound_discovery() {
         if (error_count>0) resolution="NOT_FOUND_IN_CONFIGURED_TENANTS_WITH_API_ERRORS"
         else resolution="NOT_FOUND_ALL_CONFIGURED_TENANTS"
       } else if (found_count==1) {
-        if (ap_f[host]=="YES") resolved="AA_PROD"
-        else if (an_f[host]=="YES") resolved="AA_NONPROD"
-        else if (dx_f[host]=="YES") resolved="DXC"
+        if (ap_f[host]=="YES") resolved="Company_B_PROD"
+        else if (an_f[host]=="YES") resolved="Company_B_NONPROD"
+        else if (dx_f[host]=="YES") resolved="Company_A"
 
         if (resolved==expected) resolution="FOUND_IN_EXPECTED_TENANT_ON_RETRY"
         else resolution="FOUND_IN_DIFFERENT_TENANT"
@@ -1081,19 +1081,19 @@ run_notfound_discovery() {
 generate_executive_summaries() {
   log "Generating executive summaries with EXEC_STALE_HOURS=${EXEC_STALE_HOURS}"
 
-  : > "$AA_EXEC_CSV"
-  : > "$DXC_EXEC_CSV"
+  : > "$Company_B_EXEC_CSV"
+  : > "$Company_A_EXEC_CSV"
 
-  echo "run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_dxc_management_zone,source_file" >> "$AA_EXEC_CSV"
-  echo "run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_dxc_management_zone,source_file" >> "$DXC_EXEC_CSV"
+  echo "run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_Company_A_management_zone,source_file" >> "$Company_B_EXEC_CSV"
+  echo "run_ts,category,tenant_or_expected,hostname,age_hours,age_human,lastSeenTms,entityId,displayName,in_Company_A_management_zone,source_file" >> "$Company_A_EXEC_CSV"
 
   if [[ -f "$REPORT_CSV" && -s "$REPORT_CSV" ]]; then
     awk -F',' \
       -v now_ms="$(($(date +%s)*1000))" \
       -v th="${EXEC_STALE_HOURS}" \
       -v run_ts="${RUN_TS}" \
-      -v aa_out="$AA_EXEC_CSV" \
-      -v dxc_out="$DXC_EXEC_CSV" \
+      -v Company_B_out="$Company_B_EXEC_CSV" \
+      -v Company_A_out="$Company_A_EXEC_CSV" \
       -v src="$REPORT_CSV" '
       NR==1 { next }
       {
@@ -1107,12 +1107,12 @@ generate_executive_summaries() {
 
         category="STALE_" th "H_PLUS"
 
-        if (tenant=="AA_PROD" || tenant=="AA_NONPROD") {
-          printf "%s,%s,%s,%s,%.2f,%s,%s,%s,%s,%s,%s\n", run_ts, category, tenant, host, age_hours, age_h, last, entity, display, mz, src >> aa_out
+        if (tenant=="Company_B_PROD" || tenant=="Company_B_NONPROD") {
+          printf "%s,%s,%s,%s,%.2f,%s,%s,%s,%s,%s,%s\n", run_ts, category, tenant, host, age_hours, age_h, last, entity, display, mz, src >> Company_B_out
         }
 
-        if (tenant=="DXC") {
-          printf "%s,%s,%s,%s,%.2f,%s,%s,%s,%s,%s,%s\n", run_ts, category, tenant, host, age_hours, age_h, last, entity, display, mz, src >> dxc_out
+        if (tenant=="Company_A") {
+          printf "%s,%s,%s,%s,%.2f,%s,%s,%s,%s,%s,%s\n", run_ts, category, tenant, host, age_hours, age_h, last, entity, display, mz, src >> Company_A_out
         }
       }
     ' "$REPORT_CSV"
@@ -1121,8 +1121,8 @@ generate_executive_summaries() {
   if [[ -f "$DISCOVERY_CSV" && -s "$DISCOVERY_CSV" ]]; then
     awk -F',' \
       -v run_ts="${RUN_TS}" \
-      -v aa_out="$AA_EXEC_CSV" \
-      -v dxc_out="$DXC_EXEC_CSV" \
+      -v Company_B_out="$Company_B_EXEC_CSV" \
+      -v Company_A_out="$Company_A_EXEC_CSV" \
       -v src="$DISCOVERY_CSV" '
       NR==1 { next }
       {
@@ -1134,24 +1134,24 @@ generate_executive_summaries() {
 
         category="NOT_FOUND_ALL_TENANTS"
 
-        if (expected=="AA_PROD" || expected=="AA_NONPROD") {
-          printf "%s,%s,%s,%s,,,,,,,%s\n", run_ts, category, expected, host, src >> aa_out
+        if (expected=="Company_B_PROD" || expected=="Company_B_NONPROD") {
+          printf "%s,%s,%s,%s,,,,,,,%s\n", run_ts, category, expected, host, src >> Company_B_out
         }
 
-        if (expected=="DXC") {
-          printf "%s,%s,%s,%s,,,,,,,%s\n", run_ts, category, expected, host, src >> dxc_out
+        if (expected=="Company_A") {
+          printf "%s,%s,%s,%s,,,,,,,%s\n", run_ts, category, expected, host, src >> Company_A_out
         }
       }
     ' "$DISCOVERY_CSV"
   fi
 
   log "Executive summaries created:"
-  log "  AA:  ${AA_EXEC_CSV}"
-  log "  DXC: ${DXC_EXEC_CSV}"
+  log "  Company_B:  ${Company_B_EXEC_CSV}"
+  log "  Company_A: ${Company_A_EXEC_CSV}"
 
   log "Executive summary counts:"
-  log "  AA rows:  $(tail -n +2 "$AA_EXEC_CSV" | wc -l | tr -d ' ')"
-  log "  DXC rows: $(tail -n +2 "$DXC_EXEC_CSV" | wc -l | tr -d ' ')"
+  log "  Company_B rows:  $(tail -n +2 "$Company_B_EXEC_CSV" | wc -l | tr -d ' ')"
+  log "  Company_A rows: $(tail -n +2 "$Company_A_EXEC_CSV" | wc -l | tr -d ' ')"
 }
 
 ###############################################################################
@@ -1161,10 +1161,10 @@ show_menu() {
   cat <<EOF
 
 Select target:
-  1) AA PROD       ($(wc -l < "$PROD_LIST" | tr -d ' ') hosts)
-  2) AA NON-PROD   ($(wc -l < "$NONPROD_LIST" | tr -d ' ') hosts)
-  3) DXC            ($(wc -l < "$DXC_LIST" | tr -d ' ') hosts)
-  4) ALL / GLOBAL   (PROD + NON-PROD + DXC)
+  1) Company_B PROD       ($(wc -l < "$PROD_LIST" | tr -d ' ') hosts)
+  2) Company_B NON-PROD   ($(wc -l < "$NONPROD_LIST" | tr -d ' ') hosts)
+  3) Company_A            ($(wc -l < "$Company_A_LIST" | tr -d ' ') hosts)
+  4) ALL / GLOBAL   (PROD + NON-PROD + Company_A)
   5) Build lists only (no API calls)
   0) Exit
 
@@ -1190,8 +1190,8 @@ print_summary() {
 
   [[ -f "$DISCOVERY_CSV" ]] && echo "  Discovery report:      $DISCOVERY_CSV"
   [[ -f "$EXCLUDED_CSV" ]] && echo "  Excluded report:       $EXCLUDED_CSV"
-  [[ -f "$AA_EXEC_CSV" ]] && echo "  AA executive summary:  $AA_EXEC_CSV"
-  [[ -f "$DXC_EXEC_CSV" ]] && echo "  DXC executive summary: $DXC_EXEC_CSV"
+  [[ -f "$Company_B_EXEC_CSV" ]] && echo "  Company_B executive summary:  $Company_B_EXEC_CSV"
+  [[ -f "$Company_A_EXEC_CSV" ]] && echo "  Company_A executive summary: $Company_A_EXEC_CSV"
 }
 
 run_tenant() {
@@ -1210,7 +1210,7 @@ run_tenant() {
 
 init_output_csvs() {
   : > "$REPORT_CSV"
-  echo "tenant_group,hostname,status,lastSeenTms,age_human,matches,entityId,displayName,in_dxc_management_zone,notes" >> "$REPORT_CSV"
+  echo "tenant_group,hostname,status,lastSeenTms,age_human,matches,entityId,displayName,in_Company_A_management_zone,notes" >> "$REPORT_CSV"
 
   : > "$EXCLUDED_CSV"
   echo "run_ts,expected_group,hostname,status,comments" >> "$EXCLUDED_CSV"
@@ -1232,9 +1232,9 @@ main() {
   log "Stale threshold=${STALE_HOURS}h"
   log "Executive stale threshold=${EXEC_STALE_HOURS}h"
   log "Run timestamp=${RUN_TS}"
-  log "AA Management Zone validation=DXC"
-  log "AA Management Zone source=managementZones field from primary entity lookup"
-  log "AA Management Zone output values=MZ DXC / MZ Not DXC / UNKNOWN / N/A"
+  log "Company_B Management Zone validation=Company_A"
+  log "Company_B Management Zone source=managementZones field from primary entity lookup"
+  log "Company_B Management Zone output values=MZ Company_A / MZ Not Company_A / UNKNOWN / N/A"
   log "Primary lookup Management Zone filter=DISABLED"
   log "API optimization=single host lookup call includes +managementZones"
   log "Parallel mode=tenant-level only"
@@ -1246,21 +1246,21 @@ main() {
 
   case "$opt" in
     1)
-      set_output_files "aa_prod"
+      set_output_files "Company_B_prod"
       init_output_csvs
-      run_tenant "AA_PROD" "$TENANT_PROD_URL" "$TOKEN_PROD" "$PROD_LIST"
+      run_tenant "Company_B_PROD" "$TENANT_PROD_URL" "$TOKEN_PROD" "$PROD_LIST"
       ;;
 
     2)
-      set_output_files "aa_nonprod"
+      set_output_files "Company_B_nonprod"
       init_output_csvs
-      run_tenant "AA_NONPROD" "$TENANT_NONPROD_URL" "$TOKEN_NONPROD" "$NONPROD_LIST"
+      run_tenant "Company_B_NONPROD" "$TENANT_NONPROD_URL" "$TOKEN_NONPROD" "$NONPROD_LIST"
       ;;
 
     3)
-      set_output_files "dxc"
+      set_output_files "Company_A"
       init_output_csvs
-      run_tenant "DXC" "$TENANT_DXC_URL" "$TOKEN_DXC" "$DXC_LIST"
+      run_tenant "Company_A" "$TENANT_Company_A_URL" "$TOKEN_Company_A" "$Company_A_LIST"
       ;;
 
     4)
@@ -1275,7 +1275,7 @@ main() {
       echo "Lists generated:"
       echo "  $PROD_LIST"
       echo "  $NONPROD_LIST"
-      echo "  $DXC_LIST"
+      echo "  $Company_A_LIST"
       echo "Log saved to:"
       echo "  $LOG_FILE"
       exit 0
